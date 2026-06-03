@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sistema de Notas Post-it</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    * { font-family: 'Plus Jakarta Sans', sans-serif; }
+    body { background: #f5f6fa; }
+    .col-drop { min-height: 200px; transition: background 0.2s; }
+    .col-drop.drag-over { background: #e0e7ff; border-radius: 12px; }
+    .nota-card { cursor: grab; transition: box-shadow 0.2s, transform 0.15s; }
+    .nota-card:active { cursor: grabbing; }
+    .nota-card.dragging { opacity: 0.45; transform: scale(0.97); }
+    .nota-card:hover { box-shadow: 0 8px 24px 0 rgba(80,80,120,0.13); transform: translateY(-2px); }
+    .badge { font-size: 0.7rem; font-weight: 600; padding: 2px 10px; border-radius: 20px; }
+    .pin-btn { transition: color 0.15s; }
+    ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-thumb { background: #c7c7d0; border-radius: 4px; }
+    /* Modal */
+    #modal-overlay { transition: opacity 0.2s; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+<!-- Sidebar -->
+<div class="fixed inset-y-0 left-0 w-52 bg-[#1a2233] flex flex-col z-20">
+  <div class="px-6 pt-7 pb-4">
+    <div class="text-orange-400 font-bold text-lg leading-none">IT CS | BPs</div>
+    <div class="text-gray-400 text-sm mt-0.5">Comercial</div>
+  </div>
+  <nav class="flex-1 mt-4 space-y-1 px-3">
+    <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 text-sm">🏠 Inicio</a>
+    <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 text-sm">🔗 Links</a>
+    <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-orange-400 bg-orange-500/15 font-semibold text-sm">📋 Notas</a>
+    <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 text-sm">🕐 Bitácora</a>
+    <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 text-sm">👥 Contactos y dominios</a>
+    <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 text-sm">📊 Resumen semanal</a>
+    <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 text-sm">⚙️ Configuración</a>
+  </nav>
+  <div class="px-4 py-5 border-t border-white/10 flex items-center gap-3">
+    <div class="w-8 h-8 rounded-full bg-orange-400 flex items-center justify-center text-white font-bold text-sm">AM</div>
+    <div><div class="text-white text-sm font-semibold">Ana Martín</div><div class="text-gray-500 text-xs">BP Comercial</div></div>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="ml-52 min-h-screen flex flex-col">
+  <!-- Topbar -->
+  <header class="h-14 bg-white border-b border-gray-100 flex items-center justify-end px-8 gap-4 sticky top-0 z-10">
+    <button class="text-gray-400 hover:text-gray-600 text-xl">❓</button>
+    <button class="relative text-gray-400 hover:text-gray-600 text-xl">
+      🔔<span class="absolute -top-1 -right-1 bg-orange-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">8</span>
+    </button>
+  </header>
+
+  <main class="flex-1 px-8 py-7">
+    <div class="flex items-center gap-3 mb-1">
+      <span class="text-2xl">📋</span>
+      <h1 class="text-2xl font-bold text-gray-800">Sistema de notas tipo post-it</h1>
+    </div>
+    <p class="text-gray-400 text-sm mb-6">Organiza tus ideas, pendientes y seguimientos de forma visual y colaborativa.</p>
+
+    <!-- Filters -->
+    <div class="flex flex-wrap gap-3 mb-7">
+      <div class="flex items-center gap-2 border border-gray-200 bg-white rounded-lg px-4 py-2.5 flex-1 max-w-xs">
+        <span class="text-gray-400">🔍</span>
+        <input id="search-input" type="text" placeholder="Buscar notas, palabras clave..." class="outline-none text-sm text-gray-600 bg-transparent w-full" oninput="renderAll()"/>
+      </div>
+      <select id="filter-cat" onchange="renderAll()" class="border border-gray-200 bg-white rounded-lg px-4 py-2.5 text-sm text-gray-600 outline-none">
+        <option value="">Todas las categorías</option>
+        <option>Reuniones</option><option>Validación</option><option>Aprobación</option><option>Reportes</option>
+        <option>Requerimientos</option><option>Capacitación</option><option>IT / Accesos</option><option>Contactos</option>
+        <option>Seguimiento</option><option>Propuestas</option><option>Integración</option><option>Alertas</option>
+        <option>Contenido</option><option>Procesos</option><option>Mejora</option><option>General</option>
+      </select>
+      <select id="filter-est" onchange="renderAll()" class="border border-gray-200 bg-white rounded-lg px-4 py-2.5 text-sm text-gray-600 outline-none">
+        <option value="">Todos los estados</option>
+        <option>Hoy</option><option>Esta semana</option><option>En espera</option><option>Cerrado</option>
+      </select>
+      <button onclick="openModal()" class="bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-lg px-5 py-2.5 text-sm flex items-center gap-2 transition">
+        ＋ Nueva nota
+      </button>
+    </div>
+
+    <!-- Columns -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+      <!-- Col: Hoy -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-yellow-400 text-lg">☀️</span>
+          <span class="font-bold text-gray-700">Hoy</span>
+          <span id="cnt-Hoy" class="ml-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold px-2 py-0.5">0</span>
+        </div>
+        <div id="col-Hoy" class="col-drop space-y-3 p-1" ondragover="onDragOver(event)" ondrop="onDrop(event,'Hoy')" ondragleave="onDragLeave(event)"></div>
+      </div>
+      <!-- Col: Esta semana -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-blue-400 text-lg">📅</span>
+          <span class="font-bold text-gray-700">Esta semana</span>
+          <span id="cnt-Esta semana" class="ml-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold px-2 py-0.5">0</span>
+        </div>
+        <div id="col-Esta semana" class="col-drop space-y-3 p-1" ondragover="onDragOver(event)" ondrop="onDrop(event,'Esta semana')" ondragleave="onDragLeave(event)"></div>
+      </div>
+      <!-- Col: En espera -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-orange-400 text-lg">⏳</span>
+          <span class="font-bold text-gray-700">En espera</span>
+          <span id="cnt-En espera" class="ml-1 bg-orange-100 text-orange-700 rounded-full text-xs font-bold px-2 py-0.5">0</span>
+        </div>
+        <div id="col-En espera" class="col-drop space-y-3 p-1" ondragover="onDragOver(event)" ondrop="onDrop(event,'En espera')" ondragleave="onDragLeave(event)"></div>
+      </div>
+      <!-- Col: Cerrado -->
+      <div>
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-green-400 text-lg">✅</span>
+          <span class="font-bold text-gray-700">Cerrado</span>
+          <span id="cnt-Cerrado" class="ml-1 bg-green-100 text-green-700 rounded-full text-xs font-bold px-2 py-0.5">0</span>
+        </div>
+        <div id="col-Cerrado" class="col-drop space-y-3 p-1" ondragover="onDragOver(event)" ondrop="onDrop(event,'Cerrado')" ondragleave="onDragLeave(event)"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal Nueva Nota -->
+<div id="modal-overlay" class="fixed inset-0 bg-black/40 z-50 hidden flex items-center justify-center">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-7">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-lg font-bold text-gray-800">Nueva nota</h2>
+      <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+    </div>
+    <div class="space-y-4">
+      <input id="m-titulo" type="text" placeholder="Título *" class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-orange-400"/>
+      <textarea id="m-desc" placeholder="Descripción" rows="3" class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-orange-400 resize-none"></textarea>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-gray-500 mb-1 block">Estado</label>
+          <select id="m-estado" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none">
+            <option>Hoy</option><option>Esta semana</option><option>En espera</option><option>Cerrado</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-gray-500 mb-1 block">Categoría</label>
+          <select id="m-cat" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none">
+            <option>General</option><option>Reuniones</option><option>Validación</option><option>Aprobación</option>
+            <option>Reportes</option><option>Requerimientos</option><option>Capacitación</option><option>IT / Accesos</option>
+            <option>Contactos</option><option>Seguimiento</option><option>Propuestas</option><option>Integración</option>
+            <option>Alertas</option><option>Contenido</option><option>Procesos</option><option>Mejora</option>
+          </select>
+        </div>
+      </div>
+      <input id="m-fecha" type="date" class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-orange-400"/>
+    </div>
+    <div class="flex gap-3 mt-6">
+      <button onclick="closeModal()" class="flex-1 border border-gray-200 text-gray-600 rounded-lg py-2.5 text-sm font-semibold hover:bg-gray-50">Cancelar</button>
+      <button onclick="guardarNota()" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white rounded-lg py-2.5 text-sm font-semibold transition">Guardar nota</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = "http://localhost:8000";
+let notas = [];
+let draggingId = null;
+
+// Colores pastel por categoría
+const catColors = {
+  "Reuniones":     "bg-yellow-50  border-yellow-200",
+  "Validación":    "bg-purple-50  border-purple-200",
+  "Aprobación":    "bg-orange-50  border-orange-200",
+  "Reportes":      "bg-green-50   border-green-200",
+  "Requerimientos":"bg-teal-50    border-teal-200",
+  "Capacitación":  "bg-orange-50  border-orange-200",
+  "IT / Accesos":  "bg-blue-50    border-blue-200",
+  "Contactos":     "bg-indigo-50  border-indigo-200",
+  "Seguimiento":   "bg-lime-50    border-lime-200",
+  "Propuestas":    "bg-cyan-50    border-cyan-200",
+  "Integración":   "bg-amber-50   border-amber-200",
+  "Alertas":       "bg-red-50     border-red-200",
+  "Contenido":     "bg-pink-50    border-pink-200",
+  "Procesos":      "bg-sky-50     border-sky-200",
+  "Mejora":        "bg-violet-50  border-violet-200",
+  "General":       "bg-gray-50    border-gray-200",
+};
+const badgeColors = {
+  "Reuniones":"bg-yellow-100 text-yellow-700","Validación":"bg-purple-100 text-purple-700",
+  "Aprobación":"bg-orange-100 text-orange-700","Reportes":"bg-green-100 text-green-700",
+  "Requerimientos":"bg-teal-100 text-teal-700","Capacitación":"bg-orange-100 text-orange-700",
+  "IT / Accesos":"bg-blue-100 text-blue-700","Contactos":"bg-indigo-100 text-indigo-700",
+  "Seguimiento":"bg-lime-100 text-lime-700","Propuestas":"bg-cyan-100 text-cyan-700",
+  "Integración":"bg-amber-100 text-amber-700","Alertas":"bg-red-100 text-red-700",
+  "Contenido":"bg-pink-100 text-pink-700","Procesos":"bg-sky-100 text-sky-700",
+  "Mejora":"bg-violet-100 text-violet-700","General":"bg-gray-100 text-gray-600",
+};
+
+async function fetchNotas() {
+  try {
+    const r = await fetch(`${API}/notas`);
+    notas = await r.json();
+  } catch { notas = []; }
+  renderAll();
+}
+
+function renderAll() {
+  const q = document.getElementById("search-input").value.toLowerCase();
+  const fc = document.getElementById("filter-cat").value;
+  const fe = document.getElementById("filter-est").value;
+  const cols = ["Hoy","Esta semana","En espera","Cerrado"];
+  cols.forEach(est => {
+    const col = document.getElementById(`col-${est}`);
+    const filtered = notas.filter(n =>
+      n.estado === est &&
+      (!fc || n.categoria === fc) &&
+      (!fe || n.estado === fe) &&
+      (!q || n.titulo.toLowerCase().includes(q) || (n.descripcion||"").toLowerCase().includes(q))
+    );
+    document.getElementById(`cnt-${est}`).textContent = filtered.length;
+    col.innerHTML = filtered.map(n => cardHTML(n)).join("");
+    // Bind drag events
+    col.querySelectorAll(".nota-card").forEach(el => {
+      el.addEventListener("dragstart", e => {
+        draggingId = parseInt(el.dataset.id);
+        setTimeout(() => el.classList.add("dragging"), 0);
+      });
+      el.addEventListener("dragend", () => el.classList.remove("dragging"));
+    });
+  });
+}
+
+function cardHTML(n) {
+  const bg = catColors[n.categoria] || catColors["General"];
+  const badge = badgeColors[n.categoria] || badgeColors["General"];
+  const pin = n.fijado ? "text-orange-500" : "text-gray-300 hover:text-orange-400";
+  return `
+  <div class="nota-card rounded-xl border ${bg} p-4 select-none" draggable="true" data-id="${n.id}">
+    <div class="flex items-start justify-between gap-2 mb-1.5">
+      <span class="font-semibold text-gray-800 text-sm leading-snug flex-1">${escHtml(n.titulo)}</span>
+      <div class="flex items-center gap-1 shrink-0">
+        <button class="pin-btn ${pin} text-base" onclick="togglePin(${n.id},${n.fijado})" title="Fijar">📌</button>
+        <button class="text-gray-300 hover:text-red-400 text-base" onclick="eliminar(${n.id})" title="Eliminar">🗑</button>
+      </div>
+    </div>
+    ${n.descripcion ? `<p class="text-gray-500 text-xs mb-3 leading-relaxed">${escHtml(n.descripcion)}</p>` : ""}
+    <div class="flex items-center justify-between mt-2">
+      <span class="text-gray-400 text-xs flex items-center gap-1">📅 ${n.fecha || ""}</span>
+      <span class="badge ${badge}">${escHtml(n.categoria)}</span>
+    </div>
+  </div>`;
+}
+
+function escHtml(s) {
+  return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+// Drag & drop
+function onDragOver(e) { e.preventDefault(); e.currentTarget.classList.add("drag-over"); }
+function onDragLeave(e) { e.currentTarget.classList.remove("drag-over"); }
+async function onDrop(e, nuevoEstado) {
+  e.preventDefault();
+  e.currentTarget.classList.remove("drag-over");
+  if (!draggingId) return;
+  try {
+    await fetch(`${API}/notas/${draggingId}`, {
+      method: "PATCH",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ estado: nuevoEstado })
+    });
+    draggingId = null;
+    fetchNotas();
+  } catch(err) { console.error(err); }
+}
+
+// Pin
+async function togglePin(id, actual) {
+  await fetch(`${API}/notas/${id}`, {
+    method: "PATCH",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ fijado: !actual })
+  });
+  fetchNotas();
+}
+
+// Eliminar
+async function eliminar(id) {
+  if (!confirm("¿Eliminar esta nota?")) return;
+  await fetch(`${API}/notas/${id}`, { method: "DELETE" });
+  fetchNotas();
+}
+
+// Modal
+function openModal() {
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById("m-titulo").value = "";
+  document.getElementById("m-desc").value = "";
+  document.getElementById("m-estado").value = "Hoy";
+  document.getElementById("m-cat").value = "General";
+  document.getElementById("m-fecha").value = today;
+  document.getElementById("modal-overlay").classList.remove("hidden");
+}
+function closeModal() { document.getElementById("modal-overlay").classList.add("hidden"); }
+
+async function guardarNota() {
+  const titulo = document.getElementById("m-titulo").value.trim();
+  if (!titulo) { alert("El título es obligatorio."); return; }
+  const body = {
+    titulo,
+    descripcion: document.getElementById("m-desc").value.trim(),
+    estado: document.getElementById("m-estado").value,
+    categoria: document.getElementById("m-cat").value,
+    fecha: document.getElementById("m-fecha").value,
+    fijado: false
+  };
+  try {
+    await fetch(`${API}/notas`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(body)
+    });
+    closeModal();
+    fetchNotas();
+  } catch(e) { alert("Error al guardar. ¿Está corriendo el servidor?"); }
+}
+
+// Close modal on overlay click
+document.getElementById("modal-overlay").addEventListener("click", e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+fetchNotas();
+</script>
+</body>
+</html>
