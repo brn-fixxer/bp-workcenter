@@ -6,6 +6,7 @@
   <title>Sistema de Notas Post-it</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     * { font-family: 'Plus Jakarta Sans', sans-serif; }
     body { background: #f5f6fa; }
@@ -18,7 +19,6 @@
     .badge { font-size: 0.7rem; font-weight: 600; padding: 2px 10px; border-radius: 20px; }
     .pin-btn { transition: color 0.15s; }
     ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-thumb { background: #c7c7d0; border-radius: 4px; }
-    /* Modal */
     #modal-overlay { transition: opacity 0.2s; }
   </style>
 </head>
@@ -126,11 +126,11 @@
   </main>
 </div>
 
-<!-- Modal Nueva Nota -->
+<!-- Modal Nueva / Editar Nota -->
 <div id="modal-overlay" class="fixed inset-0 bg-black/40 z-50 hidden flex items-center justify-center">
   <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-7">
     <div class="flex items-center justify-between mb-5">
-      <h2 class="text-lg font-bold text-gray-800">Nueva nota</h2>
+      <h2 id="modal-title" class="text-lg font-bold text-gray-800">Nueva nota</h2>
       <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
     </div>
     <div class="space-y-4">
@@ -157,17 +157,23 @@
     </div>
     <div class="flex gap-3 mt-6">
       <button onclick="closeModal()" class="flex-1 border border-gray-200 text-gray-600 rounded-lg py-2.5 text-sm font-semibold hover:bg-gray-50">Cancelar</button>
-      <button onclick="guardarNota()" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white rounded-lg py-2.5 text-sm font-semibold transition">Guardar nota</button>
+      <button id="btn-guardar" onclick="guardarNota()" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white rounded-lg py-2.5 text-sm font-semibold transition">Guardar nota</button>
     </div>
   </div>
 </div>
 
 <script>
-const API = "https://bp-workcenter.onrender.com";
+// ── Supabase ──────────────────────────────────────────────
+const SUPABASE_URL = "https://oidgsaywwrhrjorkgjto.supabase.co";
+const SUPABASE_KEY = "sb_publishable_N9sPHHQTbfY_Q2OYqWyZSQ_pZR3FwJj";
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+
 let notas = [];
 let draggingId = null;
+let editingId = null; // null = crear, número = editar
 
-// Colores pastel por categoría
+// ── Colores ───────────────────────────────────────────────
 const catColors = {
   "Reuniones":     "bg-yellow-50  border-yellow-200",
   "Validación":    "bg-purple-50  border-purple-200",
@@ -197,32 +203,46 @@ const badgeColors = {
   "Mejora":"bg-violet-100 text-violet-700","General":"bg-gray-100 text-gray-600",
 };
 
+// ── Fetch desde Supabase ──────────────────────────────────
 async function fetchNotas() {
-  try {
-    const r = await fetch(`${API}/notas`);
-    notas = await r.json();
-  } catch { notas = []; }
+  const { data, error } = await sb
+    .from("notas")
+    .select("*")
+    .order("fijado", { ascending: false })
+    .order("id", { ascending: false });
+  if (error) { console.error("Error al cargar notas:", error.message); notas = []; }
+  else { notas = data || []; }
   renderAll();
 }
 
+// ── Render ────────────────────────────────────────────────
 function renderAll() {
-  const q = document.getElementById("search-input").value.toLowerCase();
+  const q  = document.getElementById("search-input").value.toLowerCase();
   const fc = document.getElementById("filter-cat").value;
   const fe = document.getElementById("filter-est").value;
   const cols = ["Hoy","Esta semana","En espera","Cerrado"];
+
   cols.forEach(est => {
     const col = document.getElementById(`col-${est}`);
-    const filtered = notas.filter(n =>
-      n.estado === est &&
-      (!fc || n.categoria === fc) &&
-      (!fe || n.estado === fe) &&
-      (!q || n.titulo.toLowerCase().includes(q) || (n.descripcion||"").toLowerCase().includes(q))
-    );
+    // Las fijadas primero, luego por id desc — ya viene ordenado desde Supabase,
+    // pero al filtrar localmente re-ordenamos para mantener el orden correcto.
+    const filtered = notas
+      .filter(n =>
+        n.estado === est &&
+        (!fc || n.categoria === fc) &&
+        (!fe || n.estado === fe) &&
+        (!q || n.titulo.toLowerCase().includes(q) || (n.descripcion||"").toLowerCase().includes(q))
+      )
+      .sort((a, b) => {
+        if (b.fijado !== a.fijado) return b.fijado ? 1 : -1;
+        return b.id - a.id;
+      });
+
     document.getElementById(`cnt-${est}`).textContent = filtered.length;
     col.innerHTML = filtered.map(n => cardHTML(n)).join("");
-    // Bind drag events
+
     col.querySelectorAll(".nota-card").forEach(el => {
-      el.addEventListener("dragstart", e => {
+      el.addEventListener("dragstart", () => {
         draggingId = parseInt(el.dataset.id);
         setTimeout(() => el.classList.add("dragging"), 0);
       });
@@ -232,15 +252,18 @@ function renderAll() {
 }
 
 function cardHTML(n) {
-  const bg = catColors[n.categoria] || catColors["General"];
+  const bg    = catColors[n.categoria]  || catColors["General"];
   const badge = badgeColors[n.categoria] || badgeColors["General"];
-  const pin = n.fijado ? "text-orange-500" : "text-gray-300 hover:text-orange-400";
+  const pinClass = n.fijado
+    ? "text-orange-500"
+    : "text-gray-300 hover:text-orange-400";
   return `
   <div class="nota-card rounded-xl border ${bg} p-4 select-none" draggable="true" data-id="${n.id}">
     <div class="flex items-start justify-between gap-2 mb-1.5">
       <span class="font-semibold text-gray-800 text-sm leading-snug flex-1">${escHtml(n.titulo)}</span>
       <div class="flex items-center gap-1 shrink-0">
-        <button class="pin-btn ${pin} text-base" onclick="togglePin(${n.id},${n.fijado})" title="Fijar">📌</button>
+        <button class="pin-btn ${pinClass} text-base" onclick="togglePin(${n.id},${n.fijado})" title="${n.fijado ? 'Quitar fijado' : 'Fijar'}">📌</button>
+        <button class="text-gray-300 hover:text-blue-400 text-base" onclick="openEditModal(${n.id})" title="Editar">✏️</button>
         <button class="text-gray-300 hover:text-red-400 text-base" onclick="eliminar(${n.id})" title="Eliminar">🗑</button>
       </div>
     </div>
@@ -256,80 +279,109 @@ function escHtml(s) {
   return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
 
-// Drag & drop
-function onDragOver(e) { e.preventDefault(); e.currentTarget.classList.add("drag-over"); }
+// ── Drag & Drop ───────────────────────────────────────────
+function onDragOver(e)  { e.preventDefault(); e.currentTarget.classList.add("drag-over"); }
 function onDragLeave(e) { e.currentTarget.classList.remove("drag-over"); }
+
 async function onDrop(e, nuevoEstado) {
   e.preventDefault();
   e.currentTarget.classList.remove("drag-over");
   if (!draggingId) return;
-  try {
-    await fetch(`${API}/notas/${draggingId}`, {
-      method: "PATCH",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({ estado: nuevoEstado })
-    });
-    draggingId = null;
-    fetchNotas();
-  } catch(err) { console.error(err); }
-}
-
-// Pin
-async function togglePin(id, actual) {
-  await fetch(`${API}/notas/${id}`, {
-    method: "PATCH",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ fijado: !actual })
-  });
+  const { error } = await sb.from("notas").update({ estado: nuevoEstado }).eq("id", draggingId);
+  if (error) console.error("Error al mover nota:", error.message);
+  draggingId = null;
   fetchNotas();
 }
 
-// Eliminar
+// ── Pin ───────────────────────────────────────────────────
+async function togglePin(id, actual) {
+  const nuevoFijado = !actual;
+  const { error } = await sb.from("notas").update({ fijado: nuevoFijado }).eq("id", id);
+  if (error) { console.error("Error al fijar nota:", error.message); return; }
+  // Actualiza en memoria y re-renderiza sin ir al servidor
+  const idx = notas.findIndex(n => n.id === id);
+  if (idx !== -1) notas[idx].fijado = nuevoFijado;
+  renderAll();
+}
+
+// ── Eliminar ─────────────────────────────────────────────
 async function eliminar(id) {
   if (!confirm("¿Eliminar esta nota?")) return;
-  await fetch(`${API}/notas/${id}`, { method: "DELETE" });
+  const { error } = await sb.from("notas").delete().eq("id", id);
+  if (error) { console.error("Error al eliminar:", error.message); return; }
   fetchNotas();
 }
 
-// Modal
+// ── Modal Nueva Nota ──────────────────────────────────────
 function openModal() {
-  const today = new Date().toISOString().slice(0,10);
-  document.getElementById("m-titulo").value = "";
-  document.getElementById("m-desc").value = "";
-  document.getElementById("m-estado").value = "Hoy";
-  document.getElementById("m-cat").value = "General";
-  document.getElementById("m-fecha").value = today;
+  editingId = null;
+  document.getElementById("modal-title").textContent = "Nueva nota";
+  document.getElementById("btn-guardar").textContent  = "Guardar nota";
+  document.getElementById("m-titulo").value  = "";
+  document.getElementById("m-desc").value    = "";
+  document.getElementById("m-estado").value  = "Hoy";
+  document.getElementById("m-cat").value     = "General";
+  document.getElementById("m-fecha").value   = new Date().toISOString().slice(0,10);
   document.getElementById("modal-overlay").classList.remove("hidden");
 }
-function closeModal() { document.getElementById("modal-overlay").classList.add("hidden"); }
 
+// ── Modal Editar Nota ─────────────────────────────────────
+function openEditModal(id) {
+  const n = notas.find(n => n.id === id);
+  if (!n) return;
+  editingId = id;
+  document.getElementById("modal-title").textContent = "Editar nota";
+  document.getElementById("btn-guardar").textContent  = "Guardar cambios";
+  document.getElementById("m-titulo").value  = n.titulo || "";
+  document.getElementById("m-desc").value    = n.descripcion || "";
+  document.getElementById("m-estado").value  = n.estado || "Hoy";
+  document.getElementById("m-cat").value     = n.categoria || "General";
+  document.getElementById("m-fecha").value   = n.fecha || new Date().toISOString().slice(0,10);
+  document.getElementById("modal-overlay").classList.remove("hidden");
+}
+
+function closeModal() {
+  document.getElementById("modal-overlay").classList.add("hidden");
+  editingId = null;
+}
+
+// ── Guardar (crear o editar) ──────────────────────────────
 async function guardarNota() {
   const titulo = document.getElementById("m-titulo").value.trim();
   if (!titulo) { alert("El título es obligatorio."); return; }
-  const body = {
+
+  const payload = {
     titulo,
     descripcion: document.getElementById("m-desc").value.trim(),
-    estado: document.getElementById("m-estado").value,
-    categoria: document.getElementById("m-cat").value,
-    fecha: document.getElementById("m-fecha").value,
-    fijado: false
+    estado:      document.getElementById("m-estado").value,
+    categoria:   document.getElementById("m-cat").value,
+    fecha:       document.getElementById("m-fecha").value,
   };
-  try {
-    await fetch(`${API}/notas`, {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify(body)
-    });
-    closeModal();
-    fetchNotas();
-  } catch(e) { alert("Error al guardar. ¿Está corriendo el servidor?"); }
+
+  let error;
+  if (editingId) {
+    // Editar existente
+    ({ error } = await sb.from("notas").update(payload).eq("id", editingId));
+  } else {
+    // Nueva nota — fijado siempre false por defecto
+    ({ error } = await sb.from("notas").insert({ ...payload, fijado: false }));
+  }
+
+  if (error) {
+    console.error("Error al guardar:", error.message);
+    alert("Error al guardar la nota: " + error.message);
+    return;
+  }
+  closeModal();
+  fetchNotas();
 }
 
-// Close modal on overlay click
+// Cierra el modal al hacer click en el fondo
 document.getElementById("modal-overlay").addEventListener("click", e => {
   if (e.target === e.currentTarget) closeModal();
 });
 
+// ── Init ──────────────────────────────────────────────────
 fetchNotas();
 </script>
 </body>
